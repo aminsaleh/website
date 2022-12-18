@@ -1,23 +1,33 @@
 from django.db import models
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractUser, UserManager, PermissionsMixin
 from django.core.validators import RegexValidator
 
-class User(models.Model):
+
+class User(AbstractUser):
+    objects = UserManager()
     first_name = models.CharField(max_length=32)
     last_name = models.CharField(max_length=64)
     username = models.CharField(
         unique=True,
         max_length=50,
-        validators=[RegexValidator(regex=r'^[A-Za-z_](\w){3,49}')]
+        validators=[RegexValidator(regex=r'^[A-Za-z_](\w){3,49}')],
     )
-    password = models.CharField(max_length=64)
     email = models.EmailField(unique=True)
     phone = models.CharField(
+        blank=True,
         max_length=11,
         validators=[RegexValidator(regex=r'[0-9]{11}')],
     )
-    address = models.TextField()
+    address = models.TextField(blank=True)
     birthday = models.DateField(null=True, blank=True)
-    
+    is_confirmed = models.BooleanField(default=False)
+    confirmation_token = models.CharField(
+        max_length=64,
+        default=''
+    )
+
+
 class Product(models.Model):
     name = models.CharField(max_length=200)
     price = models.IntegerField()
@@ -29,6 +39,7 @@ class Product(models.Model):
     score_num = models.IntegerField()
     score = models.FloatField()
     
+
 class Order(models.Model):
     
     status = models.CharField(
@@ -42,7 +53,7 @@ class Order(models.Model):
     purchase_time = models.DateTimeField(auto_now_add=True)
     deliver_time = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(
-        to=User,
+        to=get_user_model(),
         on_delete=models.CASCADE,
     )
     selected_product = models.ForeignKey(
@@ -52,10 +63,11 @@ class Order(models.Model):
     product_count = models.IntegerField()
     order_id = models.CharField(max_length=64)
 
+
 class Comment(models.Model):
     text = models.TextField()
     user = models.ForeignKey(
-        to=User,
+        to=get_user_model(),
         on_delete=models.CASCADE,
     )
     product = models.ForeignKey(

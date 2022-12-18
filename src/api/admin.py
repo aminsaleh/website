@@ -1,7 +1,6 @@
 from django.contrib import admin
+from django.contrib.auth import get_user_model
+from .models import User, Product
 
-from .models import User
-
-@admin.register(User)
-class RequestDemoAdmin(admin.ModelAdmin):
-    list_display = [field.name for field in User._meta.get_fields()]
+admin.site.register(get_user_model())
+admin.site.register(Product)

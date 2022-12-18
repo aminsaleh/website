@@ -45,6 +45,7 @@ INSTALLED_APPS = [
 
     # third party apps
     'rest_framework',
+    'oauth2_provider',
 ]
 
 MIDDLEWARE = [
@@ -131,7 +132,32 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
+LOGIN_URL = '/admin/login/'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+AUTH_USER_MODEL = 'api.User'
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+OAUTH2_PROVIDER = {
+    # this is the list of available scopes
+    'SCOPES': {
+        'read': 'Read scope', 
+        'write': 'Write scope', 
+        # 'groups': 'Access to your groups'
+    }
+}
+
+
+# email confirmation
