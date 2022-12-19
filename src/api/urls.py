@@ -12,8 +12,8 @@ urlpatterns = [
     path('accounts/forgetPassword', UserView.as_view(http_method_names=['patch'])),
 
     # path('products', ProductView.as_view()),
-    path('product/getAll', ProductView.as_view(http_method_names=['get'])),
-    path('product/getById', ProductView.as_view(http_method_names=['post'])),
+    path('products/getAll', ProductView.as_view(http_method_names=['get'])),
+    path('products/getById', ProductView.as_view(http_method_names=['post'])),
 
     # path('order', OrderView.as_view())
 ]

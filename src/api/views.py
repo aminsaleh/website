@@ -146,8 +146,12 @@ class UserView(APIView):
             subject = 'Confirmation Email'
             email_from = settings.EMAIL_HOST_USER
             recipient_list = [user.email, ]
+
+            logger.info(uid)
+            logger.info(token)
+
             send_mail(subject, html_content, email_from, recipient_list)
-            
+
             return Response(
                 {"status": "user registered successfully"},
                 status=status.HTTP_200_OK
@@ -174,7 +178,7 @@ class UserView(APIView):
         }
         
         try:
-            user = User.objects.filter(username=account_info['username'])        
+            user = User.objects.get(username=request.user)    
         except Exception as e:
             return Response(
                 {"status":"user not found"},
@@ -182,16 +186,15 @@ class UserView(APIView):
             )
 
         try:
-            user.update(
-                first_name=account_info['first_name'],
-                last_name=account_info['last_name'],
-                email=account_info['email'],
-                username=account_info['username'],
-                phone=account_info['phone'],
-                address=account_info['address'],
-                birthday=account_info['birthday'],
-                is_confirmed=False,              
-            )
+            user.first_name=account_info['first_name']
+            user.last_name=account_info['last_name']
+            user.email=account_info['email']
+            user.username=account_info['username']
+            user.phone=account_info['phone']
+            user.address=account_info['address']
+            user.birthday=account_info['birthday']
+            user.is_confirmed=False
+            user.save()
             
         except Exception as e:
             return Response(
@@ -232,20 +235,14 @@ class UserView(APIView):
         # request.session
 
         account_info = {
-            "email": request.data['email'],
-            "username": request.data['username'],
-            "phone": request.data['phone'],
-            "old_password": request['old_password'],
-            "new_password": request['new_password'],
-            "confirm_new_password": request['confirm_new_password'],
+            "old_password": request.data['old_password'],
+            "new_password": request.data['new_password'],
+            "confirm_new_password": request.data['confirm_new_password'],
         }
-        
-        # check username and password
-        account_info['username'] = account_info['username'].lower()
-        account_info['email'] = account_info['email'].lower()
 
+        # check passwords
         try:
-            user = User.objects.filter(username=account_info['username'])        
+            user = User.objects.get(username=request.user)        
         except Exception as e:
             return Response(
                 {"status":"user not found"},
@@ -260,7 +257,7 @@ class UserView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if account_info['password']!=account_info['confirm_password']:
+        if account_info['new_password']!=account_info['confirm_new_password']:
             return Response(
                 {"status":"Mismatch"},
                 status=status.HTTP_400_BAD_REQUEST
