@@ -22,10 +22,6 @@ class User(AbstractUser):
     address = models.TextField(blank=True)
     birthday = models.DateField(null=True, blank=True)
     is_confirmed = models.BooleanField(default=False)
-    confirmation_token = models.CharField(
-        max_length=64,
-        default=''
-    )
 
 
 class Product(models.Model):

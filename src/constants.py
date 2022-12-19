@@ -9,3 +9,10 @@ DB = SimpleNamespace(
     host=os.getenv("DB_HOST"),
     port=os.getenv("DB_PORT"),
 )
+
+EMAIL = SimpleNamespace(
+    host=os.getenv("EMAIL_HOST"),
+    username=os.getenv("EMAIL_USERNAME"),
+    password=os.getenv("EMAIL_PASSWORD"),
+    port=os.getenv("EMAIL_PORT"),
+)

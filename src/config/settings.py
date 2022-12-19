@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/3.2/ref/settings/
 
 from pathlib import Path
 
-from src.constants import DB
+from src.constants import DB, EMAIL
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -160,4 +160,10 @@ OAUTH2_PROVIDER = {
 }
 
 
-# email confirmation
+# email credentials
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_USE_TLS = True
+EMAIL_HOST = EMAIL.host
+EMAIL_HOST_USER = EMAIL.username
+EMAIL_HOST_PASSWORD = EMAIL.password
+EMAIL_PORT = EMAIL.port
