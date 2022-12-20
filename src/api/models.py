@@ -58,6 +58,10 @@ class Order(models.Model):
     )
     product_count = models.IntegerField()
     order_id = models.CharField(max_length=64)
+    post_method = models.IntegerField()
+    payment_method = models.IntegerField()
+    post_id = models.CharField(max_length=32)
+    payment_status = models.CharField(max_length=128)
 
 
 class Comment(models.Model):
