@@ -1,19 +1,20 @@
-from django.shortcuts import render
-from loguru import logger
-from oauth2_provider.contrib.rest_framework import TokenHasReadWriteScope, TokenHasScope
+from types import SimpleNamespace
 
+from django.contrib.auth.tokens import default_token_generator
+from django.shortcuts import redirect, render
+from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.db.models import Q
+from loguru import logger
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from src.config.mail import Mail
+
 from .models import *
 from .serializers import *
-
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.utils.encoding import force_bytes
-from django.conf import settings
-from django.core.mail import send_mail
 
 
 class CostumePermissions(permissions.BasePermission):
@@ -25,7 +26,10 @@ class CostumePermissions(permissions.BasePermission):
 
         if requset_method=='POST':
             return True
-        if requset_method=='GET' and request.path_info=='/accounts/confirm':
+        if (
+            requset_method=='GET' 
+            and request.path_info==reverse('confirm_page')
+        ):
             return True
         if (requset_method in authentication_reqs) and (user_authenticated):
             return True
@@ -35,7 +39,8 @@ class CostumePermissions(permissions.BasePermission):
 
 class UserView(APIView):
 
-    permission_classes = [CostumePermissions]
+    # permission_classes = [CostumePermissions]
+    permission_classes = [permissions.AllowAny]
 
     # getInfo
     def get(self, request):
@@ -43,12 +48,15 @@ class UserView(APIView):
         # request.session
         
         url_path = request.path_info
-        if url_path=='/accounts/getInfo':
+
+        if url_path==reverse('account_info_page'):
             username = request.GET["username"]
+            
             if username==request.user.username:
                 account_info = User.objects.get(
                     username=username
                 )
+
                 serializer = UserSerializer(account_info)
                 return Response(
                     serializer.data,
@@ -61,244 +69,134 @@ class UserView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-        elif url_path=="/accounts/confirm":
+        if url_path==reverse('confirm_page'):
             uidb64 = request.GET['uidb64']
             token = request.GET['token']
-
             if uidb64 is not None and token is not None:
                 uid = urlsafe_base64_decode(uidb64)
-                try:
-                    user = User.objects.get(pk=uid)
-                    if default_token_generator.check_token(user, token) and user.is_confirmed == False:
-                        user.is_confirmed = True
-                        user.save()
-                        return Response(
-                            {"status":"user confirmed :)"},
-                            status=status.HTTP_200_OK
-                        )
-                except:
+                user = User.objects.get(pk=uid)
+                token_exist = default_token_generator.check_token(user, token)
+                
+                if token_exist and not user.is_confirmed:
+                    logger.info(f'{token_exist}, type{type(token_exist)}')
+                    user.is_confirmed = True
+                    user.save()
+                    return Response(
+                        {"status": "user confirmed :)"},
+                        status=status.HTTP_200_OK
+                    )
+
+                elif user.is_confirmed:
+                    return Response(
+                        {
+                            "status": {
+                                "user_confirmed": True,
+                            }
+                        },
+                        status=status.HTTP_200_OK
+                    )
+
+                else:
                     # if not send another token email to the user
                     return Response(
                         {"status":"email not confirmed :("},
                         status=status.HTTP_400_BAD_REQUEST
-                    )                    
+                    )
 
-        else:
-            # useless code!
-            return Response(
-                {"status":"url not found :("},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        if url_path==reverse('forget_password'):
+            uidb64 = request.GET['uidb64']
+            token = request.GET['token']
+            if uidb64 is not None and token is not None:
+                uid = urlsafe_base64_decode(uidb64)
+                user = User.objects.get(pk=uid)
+                token_exist = default_token_generator.check_token(user, token)
+                
+                if token_exist:
+                    logger.info(f'{token_exist}, type{type(token_exist)}')
+                    
+                    return Response(
+                        {"status": "show password reset form :)"},
+                        status=status.HTTP_200_OK
+                    )
 
     # register
     def post(self, request):
-        account_info = {
-            "first_name": request.data['first_name'],
-            "last_name": request.data['last_name'],
-            "email": request.data['email'],
-            "username": request.data['username'],
-            "password": request.data['password'],
-            "confirm_password": request.data['confirm_password'],
-        }
+        
+        url_path = request.path_info
 
-        # check username and password
-        account_info['username'] = account_info['username'].lower()
-        account_info['email'] = account_info['email'].lower()
+        if url_path==reverse('register_page'):
+            if request.data['password']!=request.data['confirm_password']:
+                return Response(
+                    {"status": "Mismatch passwords :("},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            serializer = UserSerializer(data=request.data)
+            if serializer.is_valid():
+                user = serializer.create(serializer.validated_data)
+                return Response(
+                    data=serializer.data,
+                    status=status.HTTP_201_CREATED
+                )
 
-        if not account_info['password'] or not account_info['confirm_password']:
+            
+            try:
+                send_mail = Mail(user=user, url=reverse('confirm_page'))
+                send_mail()
+                
+                return Response(
+                    {"status": "user registered :)"},
+                    status=status.HTTP_200_OK
+                )
+            except Exception as e:
+                return Response(
+                    {"status": "there was a problem in sending email :("},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        if url_path==reverse('forget_password'):
+            username_or_email = request.data['forget_info']
+            user = User.objects.get(Q(username=username_or_email) | Q(email=username_or_email))
+            mail = Mail(user=user, url=reverse('forget_password'))
+            mail()
             return Response(
-                {"status":"Empty Password :("},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if account_info['password']!=account_info['confirm_password']:
-            return Response(
-                {"status":"Mismatch passwords :("},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            user = User.objects.create(
-                first_name=account_info['first_name'],
-                last_name=account_info['last_name'],
-                email=account_info['email'],
-                username=account_info['username'],
-                password=account_info['password'],
-                is_confirmed=False,
-            )
-            user.set_password(account_info['password'])
-            user.save()
-        except Exception as e:
-            return Response(
-                {"status": "username or email is not unique :("},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # send confirmation email
-        try:
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-            html_content = """<h3>Hello %s</h3>
-                <a href='http://localhost:8000/confirm?uidb64=%s&token=%s'>
-                click to confirm</a>""" % (account_info['username'], uid, token)
-
-            subject = 'Confirmation Email'
-            email_from = settings.EMAIL_HOST_USER
-            recipient_list = [user.email, ]
-
-            logger.info(uid)
-            logger.info(token)
-
-            send_mail(subject, html_content, email_from, recipient_list)
-
-            return Response(
-                {"status": "user registered :)"},
+                {"status": "please check your email :)"},
                 status=status.HTTP_200_OK
             )
-        except Exception as e:
-            return Response(
-                {"status":"there was a problem in sending email :("},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+
 
     # update
-    def put(self, request):
-
-        # request.session
-
-        account_info = {
-            "first_name": request.data['first_name'],
-            "last_name": request.data['last_name'],
-            "email": request.data['email'],
-            "username": request.data['username'],
-            "phone": request.data['phone'],
-            "address": request.data['address'],
-            "birthday": request.data['birthday'],
-        }
-        
-        try:
-            user = User.objects.get(username=request.user)    
-        except Exception as e:
-            return Response(
-                {"status":"user not found :("},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        try:
-            user.first_name=account_info['first_name']
-            user.last_name=account_info['last_name']
-            user.email=account_info['email']
-            user.username=account_info['username']
-            user.phone=account_info['phone']
-            user.address=account_info['address']
-            user.birthday=account_info['birthday']
-            user.is_confirmed=False
-            user.save()
-            
-        except Exception as e:
-            return Response(
-                {"status":"updating user unsuccessfull :("},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # send confirmation email
-        try:
-            
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-            html_content = """<h3>Hello %s</h3>
-                <a href='http://localhost:8000/confirm?uidb64=%s&token=%s'>
-                click to confirm</a>""" % (account_info['username'], uid, token)
-
-            subject = 'Confirmation Email'
-            email_from = settings.EMAIL_HOST_USER
-            recipient_list = [user.email, ]
-            send_mail(subject, html_content, email_from, recipient_list)
-            
-            return Response(
-                {"status":"user updated :)"},
-                status=status.HTTP_200_OK
-            )
-
-        except Exception as e:
-            return Response(
-                {"status":"there was a problem in sending email :("},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-
-    # forget
     def patch(self, request):
 
         # request.session
-
-        account_info = {
-            "old_password": request.data['old_password'],
-            "new_password": request.data['new_password'],
-            "confirm_new_password": request.data['confirm_new_password'],
-        }
-
-        # check passwords
-        try:
-            user = User.objects.get(username=request.user)        
-        except Exception as e:
+        user = User.objects.get(username=request.user.username)
+        if request.data['password']!=request.data['confirm_password']:
             return Response(
-                {"status":"user not found :("},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        if not account_info['old_password'] and \
-            not account_info['new_password'] or \
-            not account_info['confirm_new_password']:
-            return Response(
-                {"status":"Empty Password"},
+                {"status": "Mismatch passwords :("},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        if account_info['new_password']!=account_info['confirm_new_password']:
-            return Response(
-                {"status":"Mismatch"},
-                status=status.HTTP_400_BAD_REQUEST
+        
+        modification_data = {}
+        for key in request.data:
+            if request.data[key]!=user.__dict__[key]:
+                modification_data[key] = request.data[key]
+        
+        serializer = UserSerializer(data=modification_data, partial=True)
+        if serializer.is_valid():
+            user = serializer.update(
+                instance=user,
+                validated_data=serializer.validated_data
             )
-
-        try:
-            user.is_confirmed=False
-            user.set_password(account_info['new_password'])
-            user.save()
-            
-        except Exception as e:
             return Response(
-                {"status":"updating user unsuccessfull :("},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # send confirmation email
-        try:
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-            html_content = """<h3>Hello %s</h3>
-                <a href='http://localhost:8000/confirm?uidb64=%s&token=%s'>
-                click to confirm</a>""" % (account_info['username'], uid, token)
-
-            subject = 'Confirmation Email'
-            email_from = settings.EMAIL_HOST_USER
-            recipient_list = [user.email, ]
-            send_mail(subject, html_content, email_from, recipient_list)
-            
-            return Response(
-                {"status":"user updated :)"},
+                serializer.data,
                 status=status.HTTP_200_OK
             )
-
-        except Exception as e:
+        else:
             return Response(
-                {"status":"there was a problem in sending email :("},
+                {"error_fields": serializer.errors.keys()},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
+        
     # delete account
     def delete(self, request):
         # check for the two factor authentication
@@ -365,12 +263,15 @@ class OrderView(APIView):
             # check if there is a product like this one
             # add a row to the orders if there is not
             # increase the number of purchased if there is
-            user = request.user
-            product_code = request["product_code"]
+
+            product_info = {
+                "product_code": request.data["product_code"],
+                "user": request.user,
+            }
 
             product_query = Order.objects.filter(
                 user=user,
-                selected_product=Product.objects.filter(code=product_code),
+                selected_product=Product.objects.filter(code=product_info["product_code"]),
             )
 
             if product_query > 0:
@@ -392,7 +293,7 @@ class OrderView(APIView):
                         status='bs',
                         # purchase_time=,
                         # deliver_time=,
-                        user=request.user,
+                        user=product_info["user"],
                         selected_product=product_query,
                         product_count=1,
                         # order_id=hash of user and product and count,
@@ -417,12 +318,15 @@ class OrderView(APIView):
             # find the row for this product
             # decrease the number of purchased
             # if its zero remove the row
-            user = request.user
-            product_code = request["product_code"]
 
+            product_info = {
+                "product_code": request.data["product_code"],
+                "user": request.user,
+            }
+            
             product_query = Order.objects.filter(
                 user=user,
-                selected_product=Product.objects.filter(code=product_code),
+                selected_product=Product.objects.filter(code=product_info["product_code"]),
             )
 
             if product_query.product_count>1:
@@ -441,7 +345,6 @@ class OrderView(APIView):
 
             else:
                 try:
-                    #product_query.product_count==0
                     product_query.delete()
                     return Response(
                         {'status':'product deleted :)'},
@@ -457,7 +360,9 @@ class OrderView(APIView):
         if request_path=='/order/basketView':
             # get the user correspondig order's products
             # and show them in the left side of the main page
+
             user = request.user
+
             try:
                 products_query = Order.objects.filter(
                     status='bs',
@@ -517,7 +422,8 @@ class OrderView(APIView):
             if view_page==2:
 
                 # check if previous sections' data provided completely
-                
+                # nothin to check here :)
+
                 try:
                     user_query = User.objects.filter(
                         user=user,
@@ -537,7 +443,9 @@ class OrderView(APIView):
             if view_page==3:
 
                 # check if previous sections' data provided completely
-                
+                if request.data["user_check"]:
+                    pass
+
                 # make models for post and payment methods
                 # and their corresponing data like tokens, ...
                 
